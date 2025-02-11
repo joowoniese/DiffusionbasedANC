@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # CSV 파일 경로 설정
-csv_file = "/hdd_ext/hdd3/joowoniese/diffwave4/event_logs/loss_log.csv"
+csv_file = "/hdd_ext/hdd3/joowoniese/diffwave4/event_logs_mel/loss_log_mel.csv"
 
 # CSV 파일 로드 (헤더 없음)
 try:
@@ -14,7 +14,7 @@ except FileNotFoundError:
     exit()
 
 # grad_norm 값을 텐서 형식에서 숫자(float)로 변환
-data['grad_norm'] = data['grad_norm'].apply(lambda x: float(str(x).split('(')[1].split(',')[0]))
+# data['grad_norm'] = data['grad_norm'].apply(lambda x: float(str(x).split('(')[1].split(',')[0]))
 
 # 데이터 확인
 print(data.head())
@@ -29,8 +29,8 @@ plt.grid(True, linestyle='--', alpha=0.6)
 plt.legend(fontsize=12)
 plt.tight_layout()
 # 그래프 저장
-loss_image_path = "/hdd_ext/hdd3/joowoniese/diffwave4/train_logs/loss_graph.png"
-plt.savefig(loss_image_path)
+loss_image_path = "/hdd_ext/hdd3/joowoniese/diffwave4/train_logs/mel_loss_graph.png"
+# plt.savefig(loss_image_path)
 print(f"[INFO] Loss 그래프가 저장되었습니다: {loss_image_path}")
 # plt.show()
 

@@ -54,7 +54,6 @@ class DiffWaveLearner:
         beta = np.array(self.params.noise_schedule)
         noise_level = np.cumprod(1 - beta)
         self.noise_level = torch.tensor(noise_level.astype(np.float32))
-        # Loss 재정의
         self.loss_fn = nn.L1Loss()
         self.summary_writer = None
 
@@ -109,7 +108,7 @@ class DiffWaveLearner:
         while True:
             for features in tqdm(self.dataset,
                                  desc=f'Epoch {self.step // len(self.dataset)}') if self.is_master else self.dataset:
-                print(f"[DEBUG] Processing batch {self.step}")  # 🚨 배치가 정상적으로 실행되는지 확인
+                print(f"[DEBUG] Processing batch {self.step}")
 
                 if max_steps is not None and self.step >= max_steps:
                     return
@@ -133,36 +132,46 @@ class DiffWaveLearner:
         for param in self.model.parameters():
             param.grad = None
 
-        audio = features['audio']  # Input 데이터
-        target = features['target']  # 우리가 복원하고 싶은 Target 데이터 (Condition 역할)
+        audio = features['audio']
+        target = features['target']
 
         N, T = audio.shape
         device = audio.device
         self.noise_level = self.noise_level.to(device)
 
         with self.autocast:
-            # Diffusion step t를 랜덤 샘플링
             t = torch.randint(0, len(self.params.noise_schedule), [N], device=audio.device)
             noise_scale = self.noise_level[t].unsqueeze(1)
             noise_scale_sqrt = noise_scale ** 0.5
             noise = torch.randn_like(audio)
 
-            # Noisy Audio 생성
             noisy_audio = noise_scale_sqrt * audio + (1.0 - noise_scale) ** 0.5 * noise
 
-            # 🔹 기존 spectrogram을 target으로 변경
-            predicted = self.model(noisy_audio, t, target)
+            # 🔹 target 채널 변환 (8채널 -> 1채널)
+            if target is not None:
+                if target.ndim == 3 and target.shape[1] > 1:
+                    target = target.mean(dim=1, keepdim=True)  # 다중 채널을 1채널로 변환
 
-            # 🔹 Loss를 target을 직접 예측하는 방식으로 변경
+                target = target.unsqueeze(1)  # (B, 1, T) → (B, 1, 1, T)
+
+                # 🚨 DistributedDataParallel일 경우 module을 통해 접근
+                if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+                    target = self.model.module.target_upsampler(target)
+                else:
+                    target = self.model.target_upsampler(target)
+
+                target = torch.squeeze(target, 1)  # 다시 (B, 1, T)로 변환
+
+            predicted = self.model(noisy_audio, t, target)
             loss = self.loss_fn(target, predicted.squeeze(1))
 
-        # 기존 학습 과정 유지
         self.scaler.scale(loss).backward()
         self.scaler.unscale_(self.optimizer)
         self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm or 1e9)
         self.scaler.step(self.optimizer)
         self.scaler.update()
         return loss
+
 
     def _write_summary(self, step, features, loss):
         try:
@@ -232,7 +241,6 @@ def train(args, params):
 
     model = DiffWave(params).cuda()
     _train_impl(0, model, dataset, args, params)
-
 
 
 def train_distributed(replica_id, replica_count, port, args, params):
