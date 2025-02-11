@@ -132,37 +132,36 @@ class DiffWaveLearner:
         for param in self.model.parameters():
             param.grad = None
 
-        audio = features['audio']
-        target = features['target']
+        audio = features['audio']  # Input 데이터
+        target = features['target']  # Target 데이터 (Condition 역할)
 
         N, T = audio.shape
         device = audio.device
         self.noise_level = self.noise_level.to(device)
 
         with self.autocast:
+            # Diffusion step t 샘플링
             t = torch.randint(0, len(self.params.noise_schedule), [N], device=audio.device)
             noise_scale = self.noise_level[t].unsqueeze(1)
             noise_scale_sqrt = noise_scale ** 0.5
             noise = torch.randn_like(audio)
 
+            # Noisy Audio 생성
             noisy_audio = noise_scale_sqrt * audio + (1.0 - noise_scale) ** 0.5 * noise
 
-            # 🔹 target 채널 변환 (8채널 -> 1채널)
-            if target is not None:
-                if target.ndim == 3 and target.shape[1] > 1:
-                    target = target.mean(dim=1, keepdim=True)  # 다중 채널을 1채널로 변환
+            # 🚨 [디버깅] target의 shape 확인
+            print(f"[DEBUG] target shape: {target.shape}")
 
-                target = target.unsqueeze(1)  # (B, 1, T) → (B, 1, 1, T)
+            # 🔹 target을 conditioner로 직접 사용 (upsampler 제거)
+            conditioner = target.unsqueeze(1)  # (B, 1, T)
 
-                # 🚨 DistributedDataParallel일 경우 module을 통해 접근
-                if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
-                    target = self.model.module.target_upsampler(target)
-                else:
-                    target = self.model.target_upsampler(target)
+            # 🚨 [디버깅] conditioner의 shape 확인
+            print(f"[DEBUG] conditioner shape after unsqueeze: {conditioner.shape}")
 
-                target = torch.squeeze(target, 1)  # 다시 (B, 1, T)로 변환
+            # 모델 예측 수행
+            predicted = self.model(noisy_audio, t, conditioner)
 
-            predicted = self.model(noisy_audio, t, target)
+            # L1 Loss 계산
             loss = self.loss_fn(target, predicted.squeeze(1))
 
         self.scaler.scale(loss).backward()
@@ -171,7 +170,6 @@ class DiffWaveLearner:
         self.scaler.step(self.optimizer)
         self.scaler.update()
         return loss
-
 
     def _write_summary(self, step, features, loss):
         try:

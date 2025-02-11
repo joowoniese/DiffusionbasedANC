@@ -86,27 +86,34 @@ class SpectrogramUpsampler(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-  def __init__(self, n_mels, residual_channels, dilation, uncond=False):
+  def __init__(self, residual_channels, dilation, uncond=False):
     super().__init__()
-    self.dilated_conv = nn.Conv1d(residual_channels, 2 * residual_channels, 3, padding=dilation, dilation=dilation)
-    self.diffusion_projection = nn.Linear(512, residual_channels)
+    self.dilated_conv = Conv1d(residual_channels, 2 * residual_channels, 3, padding=dilation, dilation=dilation)
+    self.diffusion_projection = Linear(512, residual_channels)
 
+    # 🔹 기존 spectrogram 대신 target 오디오를 condition으로 사용
     if not uncond:
-      self.conditioner_projection = nn.Conv1d(n_mels, 2 * residual_channels, 1)
-      self.target_projection = nn.Conv1d(n_mels, 2 * residual_channels, 1)  # 🔹 target condition 추가
+      self.conditioner_projection = Conv1d(1, 2 * residual_channels, 1)  # target 오디오를 바로 사용
     else:
       self.conditioner_projection = None
-      self.target_projection = None  # 🔹 target도 없음
 
-    self.output_projection = nn.Conv1d(residual_channels, 2 * residual_channels, 1)
+    self.output_projection = Conv1d(residual_channels, 2 * residual_channels, 1)
 
-  def forward(self, x, diffusion_step, target=None):
+  def forward(self, x, diffusion_step, conditioner=None):
+    assert (conditioner is None and self.conditioner_projection is None) or \
+           (conditioner is not None and self.conditioner_projection is not None)
+
     diffusion_step = self.diffusion_projection(diffusion_step).unsqueeze(-1)
     y = x + diffusion_step
 
-    if self.conditioner_projection is not None and target is not None:
-      target = self.target_projection(target)  # 🔹 target을 projection
-      y = self.dilated_conv(y) + target
+    if self.conditioner_projection is not None:
+      conditioner = self.conditioner_projection(conditioner)
+
+      # 🔹 기존에는 spectrogram을 upsample했지만, 이제는 target 오디오를 직접 사용
+      if conditioner.size(2) != y.size(2):
+        conditioner = F.interpolate(conditioner, size=y.size(2), mode='linear', align_corners=True)
+
+      y = self.dilated_conv(y) + conditioner
     else:
       y = self.dilated_conv(y)
 
@@ -125,29 +132,19 @@ class DiffWave(nn.Module):
     self.input_projection = Conv1d(1, params.residual_channels, 1)
     self.diffusion_embedding = DiffusionEmbedding(len(params.noise_schedule))
 
-    # 🔹 target을 condition으로 사용하기 위해 target upsampler 추가
-    self.target_upsampler = ConvTranspose2d(1, 1, [3, 32], stride=[1, 16], padding=[1, 8])
+    # 🔹 기존 spectrogram upsampler 제거
+    self.target_upsampler = None
 
     self.residual_layers = nn.ModuleList([
-      ResidualBlock(params.n_mels, params.residual_channels, 2 ** (i % params.dilation_cycle_length),
-                    uncond=params.unconditional)
+      ResidualBlock(params.residual_channels, 2 ** (i % params.dilation_cycle_length), uncond=params.unconditional)
       for i in range(params.residual_layers)
     ])
-
     self.skip_projection = Conv1d(params.residual_channels, params.residual_channels, 1)
     self.output_projection = Conv1d(params.residual_channels, 1, 1)
     nn.init.zeros_(self.output_projection.weight)
 
   def forward(self, audio, diffusion_step, target=None):
-    # 🔹 target이 None이 아니고 다중 채널이면 1채널로 변환
-    if target is not None:
-        if target.ndim == 3 and target.shape[1] > 1:  # 다중 채널인 경우 평균 변환
-            target = target.mean(dim=1, keepdim=True)  # (B, 1, T)
-
-        target = target.unsqueeze(1)  # (B, 1, T) → (B, 1, 1, T) 변환
-        target = self.target_upsampler(target)  # Upsample target
-        target = F.leaky_relu(target, 0.4)
-        target = torch.squeeze(target, 1)  # (B, 1, T)로 변환
+    assert target is not None  # 🚨 target이 반드시 필요함
 
     x = audio.unsqueeze(1)  # (B, 1, T)
     x = self.input_projection(x)
@@ -155,16 +152,20 @@ class DiffWave(nn.Module):
 
     diffusion_step = self.diffusion_embedding(diffusion_step)
 
+    # 🔹 target을 condition으로 사용
+    conditioner = target
+
     skip = None
     for layer in self.residual_layers:
-        x, skip_connection = layer(x, diffusion_step, target)
-        skip = skip_connection if skip is None else skip_connection + skip
+      x, skip_connection = layer(x, diffusion_step, conditioner)
+      skip = skip_connection if skip is None else skip_connection + skip
 
     x = skip / sqrt(len(self.residual_layers))
     x = self.skip_projection(x)
     x = F.relu(x)
     x = self.output_projection(x)
     return x
+
 
 
 
