@@ -18,6 +18,7 @@ from torch.cuda import device_count
 from torch.multiprocessing import spawn
 import  os
 
+# from에서 파일명 변경
 from conditionalDiffwave.learner_condition import train, train_distributed
 from conditionalDiffwave.params import params
 

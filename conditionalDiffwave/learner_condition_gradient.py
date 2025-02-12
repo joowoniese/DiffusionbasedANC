@@ -26,7 +26,7 @@ from tqdm import tqdm
 from conditionalDiffwave.dataset import from_path
 from conditionalDiffwave.model import DiffWave
 from conditionalDiffwave.params import AttrDict
-
+from torch.optim.lr_scheduler import StepLR
 
 def _nested_map(struct, map_fn):
     if isinstance(struct, tuple):
@@ -51,11 +51,17 @@ class DiffWaveLearner:
         self.step = 0
         self.is_master = True
 
+        # Noise level 설정
         beta = np.array(self.params.noise_schedule)
         noise_level = np.cumprod(1 - beta)
         self.noise_level = torch.tensor(noise_level.astype(np.float32))
-        self.loss_fn = nn.L1Loss()
+
+        self.loss_fn = nn.L1Loss()  # L1 Loss
         self.summary_writer = None
+
+        # Learning Rate Scheduler (학습률 스케줄러 추가)
+        self.scheduler = StepLR(self.optimizer, step_size=1000, gamma=0.5)  # 1000 스텝마다 학습률을 절반으로 감소
+
 
     def state_dict(self):
         if hasattr(self.model, 'module') and isinstance(self.model.module, nn.Module):
@@ -108,7 +114,6 @@ class DiffWaveLearner:
         while True:
             for features in tqdm(self.dataset,
                                  desc=f'Epoch {self.step // len(self.dataset)}') if self.is_master else self.dataset:
-                # print(f"[DEBUG] Processing batch {self.step}")
 
                 if max_steps is not None and self.step >= max_steps:
                     return
@@ -126,39 +131,32 @@ class DiffWaveLearner:
                     if self.step % len(self.dataset) == 0:
                         self.save_to_checkpoint()
 
+                # 스케줄러 업데이트
+                self.scheduler.step()
+
                 self.step += 1
 
     def train_step(self, features):
         for param in self.model.parameters():
             param.grad = None
 
-        audio = features['audio']  # Input 데이터
-        target = features['target']  # Target 데이터 (Condition 역할)
+        audio = features['audio']
+        target = features['target']
 
         N, T = audio.shape
         device = audio.device
         self.noise_level = self.noise_level.to(device)
 
         with self.autocast:
-            # Diffusion step t 샘플링
             t = torch.randint(0, len(self.params.noise_schedule), [N], device=audio.device)
             noise_scale = self.noise_level[t].unsqueeze(1)
             noise_scale_sqrt = noise_scale ** 0.5
             noise = torch.randn_like(audio)
 
-            # Noisy Audio 생성
             noisy_audio = noise_scale_sqrt * audio + (1.0 - noise_scale) ** 0.5 * noise
 
-            # 🚨 [디버깅] target의 shape 확인
-            # print(f"[DEBUG] target shape: {target.shape}")
+            conditioner = target.unsqueeze(1)  # Target을 condition으로 사용
 
-            # 🔹 target을 conditioner로 직접 사용 (upsampler 제거)
-            conditioner = target.unsqueeze(1)  # (B, 1, T)
-
-            # 🚨 [디버깅] conditioner의 shape 확인
-            # print(f"[DEBUG] conditioner shape after unsqueeze: {conditioner.shape}")
-
-            # 모델 예측 수행
             predicted = self.model(noisy_audio, t, conditioner)
 
             # L1 Loss 계산
@@ -166,54 +164,39 @@ class DiffWaveLearner:
 
         self.scaler.scale(loss).backward()
         self.scaler.unscale_(self.optimizer)
-        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm or 1e9)
+
+        # 기울기 클리핑 적용 (기울기 폭주 방지)
+        grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.params.max_grad_norm or 1e9)
+
         self.scaler.step(self.optimizer)
         self.scaler.update()
-        return loss
 
-    def _write_summary(self, step, features, loss):
+        return loss, grad_norm  # grad_norm을 반환하도록 수정
+
+    def _write_summary(self, step, features, loss, grad_norm):  # grad_norm을 매개변수로 추가
         try:
-            # SummaryWriter ??? ??
             if self.summary_writer is None:
-                # print(f"[DEBUG] Initializing SummaryWriter at step {step}")
                 self.summary_writer = SummaryWriter("/hdd_ext/hdd3/joowoniese/diffwave4/conditionalDiffwave/event_logs/", purge_step=step)
 
             writer = self.summary_writer
 
-            # ?? ? ?? ? ?? ??
             writer.add_scalar('train/loss', loss, step)
-            # print(f"[DEBUG] train/loss recorded at step {step}: {loss:.6f}")  # Loss ??
+            writer.add_scalar('train/grad_norm', grad_norm, step)  # grad_norm을 기록
 
-            # ????? ?? ?? ? ??
-            writer.add_scalar('train/grad_norm', self.grad_norm, step)
-            # print(f"[DEBUG] train/grad_norm recorded at step {step}: {self.grad_norm:.6f}")  # Grad Norm ??
-
-            # ??? ??
             if 'audio' in features:
                 writer.add_audio('feature/audio', features['audio'][0], step, sample_rate=self.params.sample_rate)
-                # print(f"[DEBUG] feature/audio recorded at step {step}")
 
-            # ?????? ??
-            if not self.params.unconditional and 'spectrogram' in features:
-                writer.add_image('feature/spectrogram', torch.flip(features['spectrogram'][:1], [1]), step)
-                # print(f"[DEBUG] feature/spectrogram recorded at step {step}")
-
-            # ?? ??
             writer.flush()
-            # print(f"[DEBUG] SummaryWriter flushed at step {step}")
 
-            # CSV ??? ??? ??
             loss_log_file = os.path.join("/hdd_ext/hdd3/joowoniese/diffwave4/conditionalDiffwave/event_logs/", 'loss_log.csv')
             if not os.path.exists(loss_log_file):
-                # CSV ?? ??? (?? ??)
                 with open(loss_log_file, 'w', newline='') as file:
                     csv_writer = csv.writer(file)
-                    csv_writer.writerow(['step', 'loss', 'grad_norm'])  # ?? ??
+                    csv_writer.writerow(['step', 'loss', 'grad_norm'])
 
             with open(loss_log_file, 'a', newline='') as file:
                 csv_writer = csv.writer(file)
-                csv_writer.writerow([step, loss.item(), self.grad_norm])
-                # print(f"[DEBUG] Loss and grad_norm saved to CSV at step {step}")
+                csv_writer.writerow([step, loss.item(), grad_norm])
 
         except Exception as e:
             print(f"[ERROR] Failed to write summary at step {step}: {e}")
