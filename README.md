@@ -2,5 +2,5 @@
 ### A model designed to remove Occlusion effect while employing Active Noice Cancelling function
 
 
-![Architecture](https://github.com/joowoniese/DiffusionbasedANC/blob/master/AboutModel/ModelOverview.png)
+![Architecture](https://github.com/joowoniese/DiffusionbasedANC/blob/master/AboutModel/overview.png)
 ---
