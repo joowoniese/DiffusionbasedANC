@@ -130,7 +130,11 @@ class DiffWave(nn.Module):
     super().__init__()
     self.params = params
     self.input_projection = Conv1d(1, params.residual_channels, 1)
+
+    # self.device = torch.device("cuda:1" if torch.cuda.device_count() > 1 else "cuda:0")  # GPU 1 우선 사용
+
     self.diffusion_embedding = DiffusionEmbedding(len(params.noise_schedule))
+
 
     # 🔹 기존 spectrogram upsampler 제거
     self.target_upsampler = None
@@ -165,7 +169,3 @@ class DiffWave(nn.Module):
     x = F.relu(x)
     x = self.output_projection(x)
     return x
-
-
-
-

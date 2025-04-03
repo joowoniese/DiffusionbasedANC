@@ -19,11 +19,12 @@ from torch.multiprocessing import spawn
 import  os
 
 # from에서 파일명 변경
-from conditionalDiffwave.learner_condition import train, train_distributed
+from conditionalDiffwave.learner_condition_withloss_norm import train, train_distributed
+# from conditionalDiffwave.learner_condition_gradient import train, train_distributed
 from conditionalDiffwave.params import params
 
-os.environ['NCCL_BLOCKING_WAIT'] = '1'
-os.environ['NCCL_ASYNC_ERROR_HANDLING'] = '1'
+os.environ['TORCH_NCCL_BLOCKING_WAIT'] = '1'
+os.environ['TORCH_NCCL_ASYNC_ERROR_HANDLING'] = '1'
 os.environ['NCCL_DEBUG'] = 'INFO'
 os.environ['NCCL_TIMEOUT'] = '3600'
 

@@ -108,6 +108,8 @@ class Collator:
         target = np.stack([record['target'] for record in filtered_minibatch])
         file_names = [record['file_name'] for record in filtered_minibatch]
 
+        # print(f"[DEBUG] Batch file paths: {file_names}")
+
         return {
             'audio': torch.from_numpy(audio),
             'target': torch.from_numpy(target),
@@ -117,6 +119,13 @@ class Collator:
 
 def from_path(input_dirs, target_dirs, params, is_distributed=False):
     dataset = PairedAudioDataset(input_dirs, target_dirs, sample_rate=params.sample_rate)
+    # print(f"[DEBUG] Loading input: {input_dirs}, target: {target_dirs}")
+
+    print("[DEBUG] Checking DataLoader sample batches...")
+    # for batch_idx, batch in enumerate(dataset):
+    #     print(f"[DEBUG] Batch {batch_idx}: {batch['file_name']}")
+    #     if batch_idx >= 5:
+    #         break  # 5개 배치만 확인
 
     # 🚨 데이터셋 크기 확인
     print(f"[DEBUG] Loaded dataset size: {len(dataset)}")
@@ -127,7 +136,7 @@ def from_path(input_dirs, target_dirs, params, is_distributed=False):
         dataset,
         batch_size=params.batch_size,
         collate_fn=Collator(params).collate,
-        shuffle=not is_distributed,
+        shuffle=True if not is_distributed else False,  # ✅ 수정
         num_workers=os.cpu_count(),
         sampler=DistributedSampler(dataset) if is_distributed else None,
         pin_memory=True,

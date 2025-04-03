@@ -173,14 +173,14 @@ class DiffWaveLearner:
 
     def _write_summary(self, step, features, loss):
         try:
-            # SummaryWriter ??? ??
+            # SummaryWriter ??? ?? 
             if self.summary_writer is None:
                 # print(f"[DEBUG] Initializing SummaryWriter at step {step}")
                 self.summary_writer = SummaryWriter("/hdd_ext/hdd3/joowoniese/diffwave4/conditionalDiffwave/event_logs/", purge_step=step)
 
             writer = self.summary_writer
 
-            # ?? ? ?? ? ?? ??
+            # ?? ? ?? ? ?? ??/49268
             writer.add_scalar('train/loss', loss, step)
             # print(f"[DEBUG] train/loss recorded at step {step}: {loss:.6f}")  # Loss ??
 
@@ -203,7 +203,7 @@ class DiffWaveLearner:
             # print(f"[DEBUG] SummaryWriter flushed at step {step}")
 
             # CSV ??? ??? ??
-            loss_log_file = os.path.join("/hdd_ext/hdd3/joowoniese/diffwave4/conditionalDiffwave/event_logs/", 'loss_log.csv')
+            loss_log_file = os.path.join("/hdd_ext/hdd3/joowoniese/diffwave4/conditionalDiffwave/event_logs/", 'loss_log4.csv')
             if not os.path.exists(loss_log_file):
                 # CSV ?? ??? (?? ??)
                 with open(loss_log_file, 'w', newline='') as file:
