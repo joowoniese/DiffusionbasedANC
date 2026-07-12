@@ -1,4 +1,4 @@
-# Removing Occlusion Effect in ANC based on Generative Model (DiffWave) 🎧🛡️
+# Removing Occlusion Effect in ANC based on Generative Model (DiffWave) 🎧
 
 [![Paper](https://img.shields.io/badge/Journal-Measurement%20(2026)-E91E63.svg)](https://doi.org/10.1016/j.measurement.2025.119599)
 [![Python](https://img.shields.io/badge/Python-3.8-blue.svg?style=flat-flat&logo=python)](https://www.python.org/)
@@ -30,7 +30,7 @@ The framework overlays real-world environmental noise (from AI Hub) with source 
 The core model utilizes a non-autoregressive, parallel waveform generation setup. The target audio configuration is transformed into localized feature maps injected as a bias step into the multi-layer bidirectional dilated convolutional architecture ($Bi-DilConv-2^i \bmod n$).
 
 <p align="center">
-  <img src="Info/ModelOverview.png" width="60%" alt="Model Architecture" />
+  <img src="https://github.com/joowoniese/DiffusionbasedANC/blob/master/AboutModel/ModelOverview.png" width="60%" alt="Model Architecture" />
 </p>
 *(Note: Please ensure the correct image path is mapped for your architecture detailed view)*
 
