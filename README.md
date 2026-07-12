@@ -71,3 +71,17 @@ The experiment environment was configured under Ubuntu 20.04.6 LTS utilizing PyT
 # Core requirements installation
 pip install torch==2.4.1 torchaudio --index-url [https://download.pytorch.org/whl/cu121](https://download.pytorch.org/whl/cu121)
 pip install numpy pandas librosa matplotlib pydub
+```
+
+---
+
+#### 🗂️ Citation
+@article{oh2026mitigating,
+  title={Mitigating ANC pressure effect in Active Noise Cancellation using diffusion-based generative models},
+  author={Oh, Joowon and Lee, Jeaho},
+  journal={Measurement},
+  volume={259},
+  pages={119599},
+  year={2026},
+  publisher={Elsevier}
+}
