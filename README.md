@@ -30,7 +30,7 @@ The framework overlays real-world environmental noise (from AI Hub) with source 
 The core model utilizes a non-autoregressive, parallel waveform generation setup. The target audio configuration is transformed into localized feature maps injected as a bias step into the multi-layer bidirectional dilated convolutional architecture ($Bi-DilConv-2^i \bmod n$).
 
 <p align="center">
-  <img src="Info/Conditional_Diffwave_Overview.png" width="60%" alt="Model Architecture" />
+  <img src="Info/ModelOverview.png" width="60%" alt="Model Architecture" />
 </p>
 *(Note: Please ensure the correct image path is mapped for your architecture detailed view)*
 
